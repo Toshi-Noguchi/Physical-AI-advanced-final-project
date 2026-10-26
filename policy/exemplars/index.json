@@ -1,0 +1,30 @@
+[
+ {
+  "file": "0_dent_overhead.jpg",
+  "caption": "DEFECTIVE: a dent in the top of the box (the dark, shaded hollow)."
+ },
+ {
+  "file": "1_dent_side.jpg",
+  "caption": "DEFECTIVE: the top edge of the box is crushed (the caved-in corner at the top)."
+ },
+ {
+  "file": "2_dent_side.jpg",
+  "caption": "DEFECTIVE: a dent in the side of the box (the shaded hollow with creases)."
+ },
+ {
+  "file": "3_tear_side.jpg",
+  "caption": "DEFECTIVE: the cardboard is torn (the ragged hole)."
+ },
+ {
+  "file": "4_ng_label_overhead.jpg",
+  "caption": "DEFECTIVE: a red stamp with the Japanese characters \"不良\" (it means defective)."
+ },
+ {
+  "file": "5_ng_label_overhead.jpg",
+  "caption": "DEFECTIVE: \"NG\" handwritten in marker."
+ },
+ {
+  "file": "6_none_overhead.jpg",
+  "caption": "OK: QC PASSED, FRAGILE and THIS SIDE UP stickers are normal markings; the box is undamaged."
+ }
+]

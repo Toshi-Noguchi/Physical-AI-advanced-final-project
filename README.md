@@ -1,0 +1,126 @@
+# 段ボール外観検査・不良品はじきセル
+
+Physical AI 応用1 講座の最終課題です。Isaac Sim 上に工場の検査ラインのデジタルツインを作り、
+
+- **Molmo2**（VLM）がコンベアで流れてくる段ボールを外観検査して、上位の判断と状態遷移を受け持ち、
+- **SmolVLA**（VLA）が不良品を吸着グリッパでつかみ、
+- ルールベースの動作で移動ロボット（Ridgeback + Franka）が不良品置き場へ運んで置く、
+
+という「VLM が上位、VLA が下位」の階層構成で、不良品の仕分けを自動化します。
+
+## システム構成
+
+```mermaid
+flowchart LR
+    subgraph Sim["Isaac Sim 6.2（Docker）"]
+        line["コンベア・検査ステーション\n段ボール（毎回ランダム生成）"]
+        robot["Ridgeback + Franka\n吸着グリッパ"]
+        table["NG 置き場"]
+    end
+    cams["カメラ\n真上・側面（検査ステーション）\n手首（ZED X Mini）"]
+    vlm["Molmo2-8B\n不良判定・把持の確認\n状態遷移"]
+    vla["SmolVLA（追加学習）\n把持"]
+    rule["ルールベース\n移動・置く・復帰"]
+    line --> cams
+    robot --> cams
+    cams -->|検査画像| vlm
+    cams -->|3 視点 + 関節角| vla
+    vlm -->|NG なら把持へ| vla
+    vla -->|関節目標・吸着| robot
+    vlm -->|搬送へ| rule
+    rule --> robot
+```
+
+ライン 1 箱分の流れ:
+
+1. 箱が検査位置に来るとベルトが止まり、腕は検査の邪魔にならない位置へ退避する
+2. 斜め照明を当てて真上・側面のカメラで撮影し、Molmo2 が不良（NG / REJECT の表示、破れ、凹み）を判定する
+3. 良品ならそのまま流す。不良品なら腕をホーム姿勢に戻し、SmolVLA が吸着して持ち上げる
+4. Molmo2 が側面と手首のカメラで把持できたかを確認する（失敗なら再試行）
+5. 台車が NG 置き場まで移動して箱を置き、ラインに戻ってベルトを再開する
+
+## リポジトリ構成
+
+```
+sim/             シミュレーション環境と動作
+  scene.py         ライン・検査ステーション・NG 置き場・ロボット・カメラの構築（USD）
+  box_textures.py  段ボールの見た目と不良（NG ラベル・REJECT・破れ・凹み）の生成
+  boxes.py         段ボールの 3D 形状（凹み・破れの変形）と物理
+  env.py           実行時の制御（コンベア、吸着、カメラ、照明）
+  panda_kin.py     Franka の運動学（順運動学・ヤコビアン・IK）
+  expert.py        把持デモを作るスクリプトのお手本（軌道の計画）
+  skills.py        ルールベースの動作と VLA 把持のスキル
+policy/          モデル側（それぞれ別コンテナで動く）
+  vlm_inspect.py   Molmo2 による不良判定（チェックリスト方式）
+  vlm_server.py    Molmo2 の推論サーバ
+  smolvla_server.py SmolVLA の推論サーバ
+  to_lerobot.py    収集データを LeRobot v3.0 データセットへ変換
+  eval_inspection.py 不良判定の評価
+scripts/         収集・評価・実行のスクリプト
+  run_cell.py      ライン全体の制御（上記の流れ）
+  collect_demos.py 把持デモの収集
+  train_smolvla.sh SmolVLA の追加学習
+docker/          各コンテナの起動スクリプト
+```
+
+## 動作環境
+
+- Linux、NVIDIA GPU（RTX 系）、Docker と NVIDIA Container Toolkit
+- Isaac Sim 6.2 のコンテナイメージ（`nvcr.io/nvidia/isaac-sim:6.2.0.1`、NGC から取得）
+- GPU メモリの目安: Isaac Sim 約 6GB、Molmo2-8B（bf16）約 17GB、SmolVLA の推論 約 1GB、SmolVLA の学習（バッチ 64）約 20GB
+- モデルの重みは Hugging Face から自動で取得します（`allenai/Molmo2-8B`、`lerobot/smolvla_base`）
+
+## 使い方
+
+```bash
+# 環境の確認（箱が流れて検査位置で止まる）。GUI=1 DISPLAY=:N を付けると画面つき
+docker/run.sh sim/run_env.py --seconds 40
+
+# 不良判定の評価: 評価用画像を撮影して Molmo2 で判定
+docker/run.sh scripts/make_inspection_set.py --boxes 200 --out data/inspection/eval
+docker/vlm.sh policy/eval_inspection.py data/inspection/eval --style checklist
+
+# 把持デモの収集（4 並列）→ LeRobot 形式へ変換 → SmolVLA の追加学習
+scripts/run_collection.sh data/raw/run1 4 3 42
+docker/convert.sh data/raw/run1 --out data/lerobot/pi_final_suction_pick --workers 6
+scripts/train_smolvla.sh
+
+# ライン全体の実行（推論サーバ 2 つを立ててから）
+docker/vlm.sh policy/vlm_server.py &
+docker/policy.sh outputs/train/smolvla_pick/checkpoints/last/pretrained_model &
+docker/run.sh scripts/run_cell.py --boxes 12 --record --out outputs/cell
+```
+
+## これまでの結果
+
+**Molmo2-8B の不良判定**（評価用 200 箱、学習なし）
+
+| 方式 | 正解率 | 不良の検出率 | 良品の誤検出 |
+|---|---|---|---|
+| 判定を一語で答えさせる | 91.0% | 80.9% | 0% |
+| チェックリスト（不良の種類ごとに yes/no） | 93.5% | 86.2% | 0% |
+| チェックリスト＋腕の退避＋斜め照明＋検査領域の切り出し | 93.5〜95.5% | 87.7〜91.3% | 0% |
+
+NG / REJECT の表示は全数検出できています。残る見逃しは主に浅い凹みです。見本画像を見せる few-shot も試しましたが、検出率が 56.6% に下がったため採用していません。
+
+**把持デモ**: スクリプトのお手本で 503 エピソード（30Hz、107,416 フレーム、真上・側面・手首の 3 視点）を自動収集しました。毎回、箱の大きさ・位置・向き、腕の初期姿勢、台車の位置、照明を変え、軌道にもばらつきとノイズからの復帰を入れています。
+
+**ルールベースの搬送**: 不良品 3 箱を続けて NG 置き場の別々の場所に置き、ラインへ戻れることを確認しました。
+
+## 現状
+
+- [x] 検査ラインの環境、段ボールと不良の生成
+- [x] Molmo2 による不良判定と評価
+- [x] 把持デモの収集と LeRobot 形式への変換
+- [x] ルールベースの動作（検査中の退避、搬送、置く、復帰）
+- [ ] SmolVLA の追加学習とシミュレータでの評価
+- [ ] ライン全体の通し実行と動画
+
+## ライセンスとクレジット
+
+このリポジトリのコードは MIT ライセンスです（`LICENSE`）。
+
+- シミュレータとアセット: NVIDIA Isaac Sim（倉庫・コンベア・ロボット・センサーのモデルは Isaac Sim のアセットを参照しており、このリポジトリには含みません）
+- Molmo2: Allen Institute for AI（Apache-2.0）
+- SmolVLA と LeRobot: Hugging Face（Apache-2.0）
+- フォント: DejaVu（`assets/fonts/LICENSE-DejaVu.txt`）
