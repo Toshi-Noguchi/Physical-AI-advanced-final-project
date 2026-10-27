@@ -23,8 +23,21 @@ AUTHKEY = b"pi-final-policy"
 
 
 class ModelClient:
-    def __init__(self, address=POLICY_ADDRESS):
-        self.conn = Client(address, authkey=AUTHKEY)
+    def __init__(self, address=POLICY_ADDRESS, wait: float = 0.0):
+        """Connect to a model server, retrying for up to ``wait`` seconds: a server only starts listening once its
+        weights are loaded, which takes a minute or two."""
+        deadline, waiting = time.time() + wait, False
+        while True:
+            try:
+                self.conn = Client(address, authkey=AUTHKEY)
+                return
+            except ConnectionRefusedError:
+                if time.time() >= deadline:
+                    raise
+                if not waiting:
+                    print(f"[client] waiting for the model server on {address[0]}:{address[1]}", flush=True)
+                    waiting = True
+                time.sleep(5.0)
 
     def call(self, cmd: str, **kwargs) -> dict:
         self.conn.send({"cmd": cmd, **kwargs})

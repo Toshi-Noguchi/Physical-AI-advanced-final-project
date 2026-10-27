@@ -3,8 +3,12 @@ go on; for a defective one the arm moves home, the grasp VLA (SmolVLA) picks it,
 station's side camera and the wrist camera (retrying if it failed), and rule-based skills carry the box to the reject
 table, put it down and bring the robot back to the line.
 
-    docker/vlm.sh policy/vlm_server.py &                                                # Molmo2, 127.0.0.1:6124
-    docker/policy.sh outputs/train/smolvla_pick/checkpoints/last/pretrained_model &   # SmolVLA, 127.0.0.1:6123
+    scripts/run_cell.sh --boxes 12 --record --out outputs/cell     # starts both model servers, then this script
+
+or by hand, each server in a terminal of its own (the controller waits for servers that are still loading):
+
+    docker/vlm.sh policy/vlm_server.py                    # Molmo2, 127.0.0.1:6124
+    docker/policy.sh outputs/models/smolvla_pick          # SmolVLA, 127.0.0.1:6123
     docker/run.sh scripts/run_cell.py --boxes 12 --record --out outputs/cell
 
 Without the model servers (development): --inspector oracle (ground truth), --grasp scripted (the expert that made
@@ -31,6 +35,7 @@ parser.add_argument("--task", default="pick up the cardboard box", help="instruc
 parser.add_argument("--attempts", type=int, default=2, help="grasp attempts before giving up on a box")
 parser.add_argument("--fallback-scripted", action="store_true", help="after failed VLA attempts, try the expert")
 parser.add_argument("--record", action="store_true", help="save overview frames with a status overlay (30 fps)")
+parser.add_argument("--server-wait", type=float, default=600.0, help="seconds to wait for the model servers")
 parser.add_argument("--out", default="outputs/cell")
 args, _ = parser.parse_known_args()
 
@@ -65,8 +70,11 @@ class Recorder:
     def __call__(self, env: InspectionLineEnv) -> None:
         if env.time < self.next_t:
             return
+        frame = env.capture("overview")
+        if frame is None:  # the renderer has not delivered this camera's first frame yet: try again next step
+            return
         self.next_t = env.time + self.period
-        img = Image.fromarray(env.capture("overview")).convert("RGBA")
+        img = Image.fromarray(frame).convert("RGBA")
         overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
         draw = ImageDraw.Draw(overlay)
         draw.rectangle((16, 16, 16 + 560, 24 + 30 * len(self.lines)), fill=(10, 14, 20, 170))
@@ -84,8 +92,9 @@ class Cell:
                                      cameras=("overhead", "side", "wrist", "overview"))
         self.table = RejectTable(self.env.layout)
         self.rng = np.random.default_rng(args.seed)
-        self.vlm = ModelClient(VLM_ADDRESS) if args.inspector == "molmo2" or args.check == "vlm" else None
-        self.vla = ModelClient(POLICY_ADDRESS) if args.grasp == "vla" else None
+        need_vlm = args.inspector == "molmo2" or args.check == "vlm"
+        self.vlm = ModelClient(VLM_ADDRESS, wait=args.server_wait) if need_vlm else None
+        self.vla = ModelClient(POLICY_ADDRESS, wait=args.server_wait) if args.grasp == "vla" else None
         self.rec = Recorder(self.out) if args.record else None
         self.counts = {"inspected": 0, "passed": 0, "rejected": 0, "placed": 0}
         self.state, self.box_line, self.verdict_line = "", "", ""
@@ -228,16 +237,21 @@ class Cell:
         print(f"[cell] {entry['box']}: truth={'NG' if entry['truth_defective'] else 'OK'} verdict={entry['verdict']} "
               f"attempts={[(a['method'], a['picked'], a['sensor']) for a in entry.get('attempts', [])]}", flush=True)
 
+    def close(self) -> None:
+        self.log.close()
+        for client in (self.vlm, self.vla):
+            if client:
+                client.close()
 
-cell = Cell()
+
+cell = None
 try:
+    cell = Cell()  # inside the try: a server that never comes up must still end in app.close()
     cell.run()
 except Exception:
     traceback.print_exc()  # app.close() ends the process before Python would print it
     raise
 finally:
-    cell.log.close()
-    for client in (cell.vlm, cell.vla):
-        if client:
-            client.close()
+    if cell:
+        cell.close()
     app.close()

@@ -3,6 +3,8 @@
 # Hugging Face cache.
 #
 #   docker/vlm.sh policy/eval_inspection.py data/inspection/eval1
+#
+# CONTAINER_NAME=... names the container (scripts/run_cell.sh uses it to stop the server).
 set -euo pipefail
 
 IMAGE=${VLM_IMAGE:-pi-final-vlm:latest}
@@ -21,4 +23,5 @@ args=(
   -v "$REPO:/workspace" -w /workspace
 )
 [[ -t 0 && -t 1 ]] && args+=(-it)
+[[ -n "${CONTAINER_NAME:-}" ]] && args+=(--name "$CONTAINER_NAME")
 exec docker run "${args[@]}" "$IMAGE" python "$@"

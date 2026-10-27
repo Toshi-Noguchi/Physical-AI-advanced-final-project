@@ -1,6 +1,6 @@
 """Serve a fine-tuned SmolVLA to the simulator (grasp skill).
 
-    docker/policy.sh outputs/train/smolvla_pick/checkpoints/last/pretrained_model
+    docker/policy.sh outputs/models/smolvla_pick     # a pretrained_model directory written by lerobot-train
 
 The simulator sends the overhead, side and wrist images (same resolutions as the training data), the 8-d state
 and the task; the reply is the whole action chunk (absolute joint targets + suction command, 30 Hz).

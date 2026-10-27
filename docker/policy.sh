@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Serve a fine-tuned SmolVLA checkpoint to the simulator on 127.0.0.1:6123 (LeRobot container, GPU).
 #
-#   docker/policy.sh outputs/train/smolvla_pick/checkpoints/last/pretrained_model
+#   docker/policy.sh outputs/models/smolvla_pick     # a pretrained_model directory written by lerobot-train
+#
+# CONTAINER_NAME=... names the container (scripts/run_cell.sh uses it to stop the server).
 set -euo pipefail
 
 IMAGE=${LEROBOT_IMAGE:-pi-final-lerobot:latest}
@@ -19,5 +21,6 @@ args=(
   -e POLICY_PORT="${POLICY_PORT:-6123}" -e PYTHONPATH=/workspace/policy
   -v "$REPO:/workspace" -w /workspace
 )
-[[ -t 0 && -t 1 ]] && args+=(-it)
+# No -it: a server needs no TTY, and with one a server started with `&` stops as soon as it touches the terminal.
+[[ -n "${CONTAINER_NAME:-}" ]] && args+=(--name "$CONTAINER_NAME")
 exec docker run "${args[@]}" "$IMAGE" python policy/smolvla_server.py "$@"

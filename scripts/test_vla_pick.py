@@ -2,7 +2,7 @@
 and is shot for inspection with the arm pulled back, the arm moves to its home pose, and the policy should then
 pick the box with the suction cup and carry it back home, as in the demonstrations.
 
-    docker/policy.sh outputs/train/smolvla_pick/checkpoints/last/pretrained_model &
+    docker/policy.sh outputs/models/smolvla_pick &
     docker/run.sh scripts/test_vla_pick.py --episodes 20 --out outputs/vla_pick
 
 An episode succeeds when the box is held, lifted, and the arm is back near home.
@@ -23,6 +23,7 @@ parser.add_argument("--exec-steps", type=int, default=25, help="actions executed
 parser.add_argument("--fps", type=int, default=30, help="control rate of the training data")
 parser.add_argument("--seed", type=int, default=100)
 parser.add_argument("--video", action="store_true", help="save a frame mosaic per control step")
+parser.add_argument("--server-wait", type=float, default=600.0, help="seconds to wait for the SmolVLA server")
 parser.add_argument("--out", default="outputs/vla_pick")
 args, _ = parser.parse_known_args()
 
@@ -43,7 +44,7 @@ out.mkdir(parents=True, exist_ok=True)
 env = InspectionLineEnv(app, out / "_env", seed=args.seed, cameras=(*VIEWS, "overview"), resolutions=VIEWS)
 env.set_belt(False)
 env.step(30, auto_spawn=False)
-client = ModelClient()
+client = ModelClient(wait=args.server_wait)
 rng = np.random.default_rng(args.seed)
 substeps = int(round(1.0 / (args.fps * env.dt)))
 

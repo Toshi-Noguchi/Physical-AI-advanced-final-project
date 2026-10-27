@@ -58,8 +58,11 @@ policy/          モデル側（それぞれ別コンテナで動く）
   eval_inspection.py 不良判定の評価
 scripts/         収集・評価・実行のスクリプト
   run_cell.py      ライン全体の制御（上記の流れ）
+  run_cell.sh      推論サーバ 2 つを立てて run_cell.py を実行し、終わったらサーバを止める
   collect_demos.py 把持デモの収集
   train_smolvla.sh SmolVLA の追加学習
+  test_vla_pick.py SmolVLA の把持の評価
+  make_video.sh    記録したフレームから動画（MP4）を作る
 docker/          各コンテナの起動スクリプト
 ```
 
@@ -67,7 +70,7 @@ docker/          各コンテナの起動スクリプト
 
 - Linux、NVIDIA GPU（RTX 系）、Docker と NVIDIA Container Toolkit
 - Isaac Sim 6.2 のコンテナイメージ（`nvcr.io/nvidia/isaac-sim:6.2.0.1`、NGC から取得）
-- GPU メモリの目安: Isaac Sim 約 6GB、Molmo2-8B（bf16）約 17GB、SmolVLA の推論 約 1GB、SmolVLA の学習（バッチ 64）約 20GB
+- GPU メモリの目安: Isaac Sim 約 6GB、Molmo2-8B（bf16）約 17GB、SmolVLA の推論 約 1〜2GB、SmolVLA の学習（バッチ 64）約 20GB。ライン全体を通しで動かすには、合わせて約 25GB の空きが必要です
 - モデルの重みは Hugging Face から自動で取得します（`allenai/Molmo2-8B`、`lerobot/smolvla_base`）
 
 ## 使い方
@@ -85,10 +88,15 @@ scripts/run_collection.sh data/raw/run1 4 3 42
 docker/convert.sh data/raw/run1 --out data/lerobot/pi_final_suction_pick --workers 6
 scripts/train_smolvla.sh
 
-# ライン全体の実行（推論サーバ 2 つを立ててから）
-docker/vlm.sh policy/vlm_server.py &
-docker/policy.sh outputs/train/smolvla_pick/checkpoints/last/pretrained_model &
-docker/run.sh scripts/run_cell.py --boxes 12 --record --out outputs/cell
+# 学習したチェックポイント（lerobot-train が出力する pretrained_model ディレクトリ）を outputs/models/smolvla_pick に置く
+
+# SmolVLA の把持の評価（推論サーバを立ててから）
+docker/policy.sh outputs/models/smolvla_pick &
+docker/run.sh scripts/test_vla_pick.py --episodes 20 --out outputs/vla_pick
+
+# ライン全体の実行（推論サーバ 2 つの起動と停止も行う）。録画したフレームから 2 倍速の動画を作る
+scripts/run_cell.sh --boxes 12 --record --out outputs/cell
+SPEED=2 scripts/make_video.sh outputs/cell/frames outputs/cell/cell_2x.mp4
 ```
 
 ## これまでの結果
