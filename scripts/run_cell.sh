@@ -5,13 +5,13 @@
 #   scripts/run_cell.sh --boxes 12 --record --out outputs/cell
 #   CKPT=outputs/train/smolvla_pick/checkpoints/010000/pretrained_model scripts/run_cell.sh --boxes 4
 #
-# Needs about 25 GB of free GPU memory (Isaac Sim ~6, Molmo2-8B ~17, SmolVLA ~2). The GPU may be shared, so it
-# refuses to start with less (NEED_MIB=... to change the bar). Server logs go to outputs/logs/.
+# Needs about 25 GB of free GPU memory (Isaac Sim ~6, Molmo2-8B ~17-19, SmolVLA ~1-2). The GPU may be shared, so
+# it refuses to start without some margin on top (NEED_MIB=... to change the bar). Server logs go to outputs/logs/.
 set -euo pipefail
 
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 CKPT=${CKPT:-outputs/models/smolvla_pick}
-NEED_MIB=${NEED_MIB:-25000}
+NEED_MIB=${NEED_MIB:-28000}
 LOGS=$REPO/outputs/logs
 
 [[ -f "$REPO/$CKPT/model.safetensors" ]] || { echo "no SmolVLA checkpoint in $CKPT (set CKPT=...)" >&2; exit 1; }

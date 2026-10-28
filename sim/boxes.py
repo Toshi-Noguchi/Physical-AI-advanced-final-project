@@ -13,7 +13,7 @@ from pathlib import Path
 
 import numpy as np
 from box_textures import FACE_FRAMES, FACES, BoxSpec, face_extent, face_point, render_box
-from pxr import Gf, Sdf, UsdGeom, UsdPhysics, UsdShade, Vt
+from pxr import Gf, PhysxSchema, Sdf, UsdGeom, UsdPhysics, UsdShade, Vt
 
 GRID_SPACING = 0.008  # m between mesh vertices; dents need a fairly fine grid to shade smoothly
 
@@ -121,6 +121,9 @@ def spawn_box(
     prim = root.GetPrim()
     UsdPhysics.RigidBodyAPI.Apply(prim)
     UsdPhysics.MassAPI.Apply(prim).CreateMassAttr(mass)
+    # A box waiting on the stopped belt (the robot away at the reject table) would fall asleep, and a sleeping body
+    # ignores the belt starting again: the line stalled. Boxes never sleep.
+    PhysxSchema.PhysxRigidBodyAPI.Apply(prim).CreateSleepThresholdAttr(0.0)
 
     collider = UsdGeom.Cube.Define(stage, f"{path}/collision")
     collider.CreateSizeAttr(1.0)

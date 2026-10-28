@@ -1,4 +1,4 @@
-"""Scripted suction-grasp expert that generates the demonstrations for fine-tuning MolmoAct2.
+"""Scripted suction-grasp expert that generates the demonstrations for fine-tuning the grasp VLA (SmolVLA).
 
 It is privileged (reads the box pose from the simulator) and plans kinematically with :mod:`panda_kin` at the
 physics rate, so the recorded joint targets are smooth and do not inherit the simulator's tracking lag.

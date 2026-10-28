@@ -470,7 +470,7 @@ def _mount_suction_gripper(stage, assets_root: str) -> None:
 
 CAMERAS = {
     # name: (resolution (h, w), focal length mm); horizontal aperture is 20.955 mm
-    "overhead": ((960, 1280), 18.0),  # inspection (Molmo2) and grasping (MolmoAct2) view
+    "overhead": ((960, 1280), 18.0),  # inspection (Molmo2) and grasping (SmolVLA) view
     "side": ((720, 960), 16.0),  # inspection of the +y side
     "wrist": ((360, 640), 10.0),  # grasping view, ~90 deg like DROID's ZED mini
     "overview": ((720, 1280), 15.0),  # video only, not a camera in the cell

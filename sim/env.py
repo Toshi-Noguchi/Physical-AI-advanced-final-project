@@ -356,7 +356,7 @@ class InspectionLineEnv:
                 return path
         return None
 
-    # ---------------------------------------------------------------- DROID-style interface (MolmoAct2-DROID)
+    # ---------------------------------------------------------------- DROID-style interface (grasp VLA I/O)
     def droid_state(self) -> np.ndarray:
         """DROID ``observation.state``: 7 arm joint positions + gripper position (0 open .. 1 closed).
 

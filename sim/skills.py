@@ -201,12 +201,19 @@ def vla_views(env: InspectionLineEnv) -> list[np.ndarray]:
 
 
 def vla_pick(env: InspectionLineEnv, client, task: str, max_seconds: float = 15.0, exec_steps: int = 25,
-             fps: int = 30, on_step=None) -> dict:
+             fps: int = 30, give_up_empty: float = 2.0, on_step=None) -> dict:
     """Run the grasp policy from the home pose: it drives the arm (absolute joint targets) and the suction itself.
     Like its demonstrations, an episode ends when the arm has left home and come back with the suction on (held for
-    0.5 s), or on timeout. Whether the box was really picked is for the caller to check."""
+    0.5 s), or on timeout. It is cut short when the suction has been on with nothing on it for ``give_up_empty``
+    seconds (the vacuum sensor's reading): the demonstrations never show that state, as the cup only switches on at
+    contact, so the policy has missed and does not recover by itself. Whether the box was really picked is for the
+    caller to check."""
     substeps = max(1, int(round(1.0 / (fps * env.dt))))
-    t0, queries, left_home, back_since = env.time, 0, False, None
+    t0, queries, left_home, back_since, empty_since = env.time, 0, False, None, None
+
+    def result(outcome: str) -> dict:
+        return {"finished": outcome == "done", "outcome": outcome, "queries": queries, "seconds": round(env.time - t0, 2)}
+
     while env.time - t0 < max_seconds:
         actions = client.act(vla_views(env), task, env.droid_state())["actions"]
         queries += 1
@@ -215,15 +222,21 @@ def vla_pick(env: InspectionLineEnv, client, task: str, max_seconds: float = 15.
             env.step(substeps, auto_spawn=False)
             if on_step:
                 on_step(env)
+            if env.suction_on and env.held_box() is None:
+                empty_since = env.time if empty_since is None else empty_since
+                if env.time - empty_since >= give_up_empty:
+                    return result("missed")
+            else:
+                empty_since = None
             near_home = np.abs(env.arm_q() - ARM_HOME).max() < 0.15
             left_home |= not near_home
             if left_home and near_home and env.suction_on:
                 back_since = env.time if back_since is None else back_since
                 if env.time - back_since >= 0.5:
-                    return {"finished": True, "queries": queries, "seconds": round(env.time - t0, 2)}
+                    return result("done")
             else:
                 back_since = None
-    return {"finished": False, "queries": queries, "seconds": round(env.time - t0, 2)}
+    return result("timeout")
 
 
 def scripted_pick(env: InspectionLineEnv, path: str, rng: np.random.Generator, on_step=None) -> bool:
